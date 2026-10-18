@@ -21,13 +21,15 @@ async function load(){
 }
 const INJ={shoulder:/overhead|shoulder press|military|dip|upright|behind|snatch|handstand|pike|arnold|fly|flye/,back:/deadlift|good morning|bent over|clean|snatch|jerk|hyperextension|superman/,knee:/squat|lunge|leg press|jump|step-up|pistol|sissy|leg extension|box/,wrist:/push-up|pushup|plank|handstand|dip|burpee|crawl/,neck:/neck|shrug|crunch|sit-up|situp|bicycle/};
 function tag(x){
- const n=x.name.toLowerCase(),e=(x.equipment||"").toLowerCase(),m=(x.primaryMuscles||[])[0]||"";
+ const n=x.name.toLowerCase(),e=(x.equipment||"").toLowerCase(),m=(x.primaryMuscles||[])[0]||"",ins=(x.instructions||[]).slice(0,3).join(" ").toLowerCase();
  let p=null;
  if(x.category==="strength")p=m==="chest"||(m==="triceps"&&x.mechanic==="compound")?"PUSH":m==="shoulders"?"SH":m==="lats"||m==="middle back"?"PULL":m==="biceps"?"BI":m==="triceps"?"TRI":m==="quadriceps"?"SQ":m==="hamstrings"||m==="glutes"?"HIP":m==="abdominals"?"CORE":null;
  let eq={"body only":["bw"],dumbbell:["db"],bands:["band"],machine:["gym"],cable:["gym"],barbell:["gym"],"e-z curl bar":["gym"],kettlebells:["gym"]}[e];
  if(!eq)p=null;
- else if(e==="body only"&&/pull-?up|chin-?up|hanging|muscle-?up/.test(n))eq=["bar"];
- else if(e==="body only"&&/dip/.test(n))eq=["bench"];
+ else if(e==="body only"&&(/chin|pull-?up|pullup|hang|muscle[- ]?up|gorilla|rope|\brings?\b/.test(n)||/pull-?up bar|chin-?up bar|horizontal bar|hang from|grab the bar|overhead bar|suspend/.test(ins)))eq=["bar"];
+ else if(e==="body only"&&/chair dip|bench dip/.test(n))eq=["bench"];
+ else if(e==="body only"&&/\bdips?\b|parallel|handstand|planche|lever/.test(n))eq=["gym"];
+ else if(e==="body only"&&/step-?up|box |bench|decline (crunch|sit)/.test(n))eq=["bench"];
  else if(e==="dumbbell"&&/bench|incline|decline/.test(n))eq=["db","bench"];
  return{id:x.id,n:x.name,p,eq:eq||[],v:{beginner:1,intermediate:2,expert:3}[x.level]||2,t:x.force==="static",c:x.mechanic==="compound",
   a:Object.keys(INJ).filter(k=>INJ[k].test(n)||(k==="shoulder"&&p==="SH")||(k==="back"&&m==="lower back")||(k==="knee"&&p==="SQ"))};
@@ -36,7 +38,7 @@ const haveOf=p=>{const h=new Set(["bw",...p.eq]);if(p.eq.includes("gym"))["db","
 
 /* ---------- plan generator ---------- */
 function gen(p){
- const have=haveOf(p),pool=Object.values(T),note=[];
+ const have=haveOf(p),pool=Object.values(T).filter(t=>!(S.ban||[]).includes(t.id)),note=[];
  const age=+p.age||0,tests=[p.lp,p.ll,p.lu,p.lc].filter(Boolean);
  const cur=tests.length?Math.round(tests.reduce((a,b)=>a+b,0)/tests.length):1;
  let lv=cur,cap=3;
@@ -73,7 +75,8 @@ function gen(p){
    let c=pool.filter(t=>t.p===pt&&t.eq.every(k=>have.has(k))&&!t.a.some(a=>p.inj.includes(a))&&!used.has(t.id));
    if(!c.length){miss.add(pt);return null}
    const f=c.filter(t=>t.v<=lvOf(pt));
-   if(f.length)c=f.sort((a,b)=>b.v-a.v||b.c-a.c||rk[a.eq[0]]-rk[b.eq[0]]||a.n.length-b.n.length);
+   const iso=["BI","TRI","SH","CORE"].includes(pt);
+   if(f.length)c=f.sort(iso?(a,b)=>a.c-b.c||rk[a.eq[0]]-rk[b.eq[0]]||a.n.length-b.n.length:(a,b)=>b.v-a.v||b.c-a.c||rk[a.eq[0]]-rk[b.eq[0]]||a.n.length-b.n.length);
    else c.sort((a,b)=>a.v-b.v||a.n.length-b.n.length);
    const t=c[si%Math.min(2,c.length)];
    used.add(t.id);
@@ -172,7 +175,7 @@ function libV(){
 }
 function showList(){
  const q=L.q.trim().toLowerCase(),w=q.split(/[\s-]+/).filter(Boolean);
- let a=Object.values(X).filter(x=>w.every(k=>x.name.toLowerCase().includes(k))&&(!L.mu||(x.primaryMuscles||[]).includes(L.mu))&&(!L.eq||(x.equipment||"none")===L.eq));
+ let a=Object.values(X).filter(x=>!(S.ban||[]).includes(x.id)&&w.every(k=>x.name.toLowerCase().includes(k))&&(!L.mu||(x.primaryMuscles||[]).includes(L.mu))&&(!L.eq||(x.equipment||"none")===L.eq));
  if(L.sw){const t0=T[L.sw.id],h=haveOf(S.p);a=a.filter(x=>{const t=T[x.id];return t.p&&t.p===t0.p&&t.eq.every(k=>h.has(k))&&x.id!==L.sw.id})}
  if(q)a.sort((x,y)=>(y.name.toLowerCase().startsWith(q)-x.name.toLowerCase().startsWith(q))||x.name.length-y.name.length);
  $("res").innerHTML=`<p class="mu">${a.length} found</p>`+(a.length?a.slice(0,60).map(x=>`<div class="card row2"><div onclick="show('${x.id}')"><b>${x.name}</b><div class="mu">${(x.primaryMuscles||[]).join(", ")}, ${x.equipment||"no equipment"}, ${x.level}</div></div>${L.sw?`<button class="btn sm" onclick="use('${x.id}')">Use</button>`:""}</div>`).join(""):`<p class="mu">No matches.</p>`)+(a.length>60?`<p class="mu">Showing 60 of ${a.length}. Narrow your search.</p>`:"");
@@ -180,8 +183,9 @@ function showList(){
 function show(id){E=id;back=view;view="ex";render();scrollTo(0,0)}
 function exV(){
  const x=X[E],sec=(x.secondaryMuscles||[]).length?" (also "+x.secondaryMuscles.join(", ")+")":"";
- return `<h2>${x.name}</h2><div class="mu">${(x.primaryMuscles||[]).join(", ")}${sec}, ${x.equipment||"no equipment"}, ${x.level}</div><div class="imgs">${(x.images||[]).map(i=>`<img loading="lazy" alt="${x.name} demonstration" src="${CFG.IMG+i}">`).join("")}</div><div class="card"><h3>How to do it</h3><ol>${(x.instructions||[]).map(s=>`<li>${s}</li>`).join("")}</ol></div><button class="btn" onclick="view=back;render()">Back</button>`;
+ return `<h2>${x.name}</h2><div class="mu">${(x.primaryMuscles||[]).join(", ")}${sec}, ${x.equipment||"no equipment"}, ${x.level}</div><div class="imgs">${(x.images||[]).map(i=>`<img loading="lazy" alt="${x.name} demonstration" src="${CFG.IMG+i}">`).join("")}</div><div class="card"><h3>How to do it</h3><ol>${(x.instructions||[]).map(s=>`<li>${s}</li>`).join("")}</ol></div><button class="btn" onclick="view=back;render()">Back</button><button class="btn ghost" onclick="hide('${x.id}')">Never use this exercise</button>`;
 }
+function hide(id){S.ban=[...new Set([...(S.ban||[]),id])];save();alert("Hidden from future plans and swap lists. Use Swap to replace it in your current plan.");view=back;render()}
 function swap(si,ei){L={q:"",mu:"",eq:"",sw:{si,ei,id:S.plan.sessions[si].ex[ei].id}};view="lib";render();scrollTo(0,0)}
 function use(id){
  const {si,ei}=L.sw,e=S.plan.sessions[si].ex[ei],old=T[e.id]||{},t=T[id];
@@ -197,7 +201,7 @@ function histV(){
 }
 function dataV(){
  const j=JSON.stringify(S).replace(/&/g,"&amp;").replace(/</g,"&lt;");
- return `<h2>Backup</h2><p class="mu">Your progress lives only in this browser. Save a backup file now and then. You can also copy the text below and paste it back to restore.</p><button class="btn" onclick="exp()">Save backup file</button><textarea id="bk" rows="6">${j}</textarea><button class="btn" onclick="restore()">Restore from text</button><button class="btn ghost" onclick="view='setup';render()">Edit profile and rebuild plan</button>`;
+ return `<h2>Backup</h2><p class="mu">Your progress lives only in this browser. Save a backup file now and then. You can also copy the text below and paste it back to restore.</p><button class="btn" onclick="exp()">Save backup file</button><textarea id="bk" rows="6">${j}</textarea><button class="btn" onclick="restore()">Restore from text</button><button class="btn ghost" onclick="S.ban=[];save();alert('Hidden exercises restored.');render()">Restore hidden exercises (${(S.ban||[]).length})</button><button class="btn ghost" onclick="view='setup';render()">Edit profile and rebuild plan</button>`;
 }
 function exp(){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:"application/json"}));a.download="train-coach-backup.json";a.click()}
 function restore(){try{const o=JSON.parse($("bk").value);if(o&&Array.isArray(o.logs)){S=o;save();view=S.plan?"plan":"setup";render()}else alert("That text is not a valid backup.")}catch(e){alert("That text is not a valid backup.")}}
