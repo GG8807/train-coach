@@ -28,6 +28,9 @@ input[type=number],input[type=text],input:not([type]),select,textarea{width:100%
 .set input{flex:1;min-width:0;margin:0}.set span{width:20px;color:var(--mu)}
 .bar{height:10px;border-radius:6px;background:var(--bd);margin:8px 0 4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ac)}
 .imgs{display:flex;gap:8px;overflow-x:auto;margin:10px 0}.imgs img{height:210px;max-width:100%;border-radius:10px;background:#fff}
+.imgs.sm{margin:4px 0 0}.imgs.sm img{height:130px}
+.ex{border-bottom:1px solid var(--bd);padding:4px 0 10px}.ex:last-of-type{border-bottom:0}.ex .row{border-bottom:0}
+.big{font-size:20px;padding:16px;border-width:2px;margin:0 0 10px}
 ol{padding-left:20px;margin:0}li{margin:6px 0}
 #rb{position:fixed;left:12px;right:12px;bottom:0;margin-bottom:8px;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));border-radius:12px;border:0;background:var(--tx);color:var(--bg);font:600 18px Barlow,system-ui,sans-serif}
 #rb[hidden]{display:none}

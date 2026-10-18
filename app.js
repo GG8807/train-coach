@@ -23,7 +23,7 @@ const INJ={shoulder:/overhead|shoulder press|military|dip|upright|behind|snatch|
 function tag(x){
  const n=x.name.toLowerCase(),e=(x.equipment||"").toLowerCase(),m=(x.primaryMuscles||[])[0]||"";
  let p=null;
- if(x.category==="strength")p=m==="chest"||(m==="triceps"&&x.mechanic==="compound")?"PUSH":m==="shoulders"?"SH":m==="lats"||m==="middle back"?"PULL":m==="biceps"||m==="triceps"?"ARM":m==="quadriceps"?"SQ":m==="hamstrings"||m==="glutes"?"HIP":m==="abdominals"?"CORE":null;
+ if(x.category==="strength")p=m==="chest"||(m==="triceps"&&x.mechanic==="compound")?"PUSH":m==="shoulders"?"SH":m==="lats"||m==="middle back"?"PULL":m==="biceps"?"BI":m==="triceps"?"TRI":m==="quadriceps"?"SQ":m==="hamstrings"||m==="glutes"?"HIP":m==="abdominals"?"CORE":null;
  let eq={"body only":["bw"],dumbbell:["db"],bands:["band"],machine:["gym"],cable:["gym"],barbell:["gym"],"e-z curl bar":["gym"],kettlebells:["gym"]}[e];
  if(!eq)p=null;
  else if(e==="body only"&&/pull-?up|chin-?up|hanging|muscle-?up/.test(n))eq=["bar"];
@@ -32,38 +32,59 @@ function tag(x){
  return{id:x.id,n:x.name,p,eq:eq||[],v:{beginner:1,intermediate:2,expert:3}[x.level]||2,t:x.force==="static",c:x.mechanic==="compound",
   a:Object.keys(INJ).filter(k=>INJ[k].test(n)||(k==="shoulder"&&p==="SH")||(k==="back"&&m==="lower back")||(k==="knee"&&p==="SQ"))};
 }
-const haveOf=p=>{const h=new Set(["bw",...p.eq]);if(p.eq.includes("gym"))["db","band","bar","bench"].forEach(k=>h.add(k));return h};
+const haveOf=p=>{const h=new Set(["bw",...p.eq]);if(p.eq.includes("gym"))["db","band","bar","bench"].forEach(k=>h.add(k));if(p.eq.includes("diy"))h.add("db");return h};
 
 /* ---------- plan generator ---------- */
 function gen(p){
- const have=haveOf(p),pool=Object.values(T);
- let lv=p.cur;
- if(p.hist==="never")lv=1;else if(p.hist==="off")lv=Math.min(2,Math.max(p.cur,p.peak-1));
- let days=p.days;const note=[];
- if((lv===1||p.fat==="high")&&days>4){days=4;note.push("Capped at 4 sessions a week. At your level and workload, recovery matters more than extra volume.")}
- const N={30:4,45:5,60:6}[p.min]||5;
- const FB=["SQ","PUSH","PULL","HIP","CORE","ARM"],UP=["PUSH","PULL","SH","PULL","ARM","CORE"],LO=["SQ","HIP","SQ","HIP","CORE"],PU=["PUSH","SH","PUSH","ARM","CORE"],PL=["PULL","PULL","ARM","CORE"];
+ const have=haveOf(p),pool=Object.values(T),note=[];
+ const age=+p.age||0,tests=[p.lp,p.ll,p.lu,p.lc].filter(Boolean);
+ const cur=tests.length?Math.round(tests.reduce((a,b)=>a+b,0)/tests.length):1;
+ let lv=cur,cap=3;
+ if(p.hist==="off"){cap=2;lv=Math.min(2,Math.max(cur,(p.peak||1)-1))}
+ else if(p.hist!=="on"){cap=1;lv=1;if(p.hist==="na")note.push("Training history was N/A, so the plan starts at beginner level.")}
+ if(age>=60){cap=Math.min(cap,2);lv=Math.min(lv,2)}
+ if(p.med==="yes"){cap=1;lv=1;note.push("You said a doctor limited your exercise. Get their OK before you start, and keep every set easy.")}
+ let maxd=6;
+ if(lv===1||p.fat==="high"||p.sleep==="low")maxd=4;
+ if(age>=45)maxd=Math.min(maxd,4);
+ if(age>=60||p.med==="yes")maxd=Math.min(maxd,3);
+ let days=p.days;
+ if(days>maxd){days=maxd;note.push("Capped at "+maxd+" sessions a week for recovery, based on your answers.")}
+ const N={30:4,45:6,60:7}[p.min]||6,reps=p.goal==="muscle"?[8,12]:p.goal==="fat"?[12,15]:[10,12];
+ const dn=[];
+ if(p.fat==="high")dn.push("tiring workdays");
+ if(p.sleep==="low")dn.push("short sleep");
+ if(p.med==="yes")dn.push("medical caution");
+ if(p.int==="easy")dn.push("easy start");
+ const bs=dn.length?2:(p.int==="hard"&&lv>=2?4:3);
+ const key={PUSH:"lp",SH:"lp",TRI:"lp",SQ:"ll",HIP:"ll",PULL:"lu",BI:"lu",CORE:"lc"},lvOf=pt=>Math.min(cap,p[key[pt]]||lv);
+ note.push("Sets per exercise: "+bs+(dn.length?" (kept low because of: "+dn.join(", ")+")":"")+". Reps: "+reps[0]+"–"+reps[1]+". Starting levels: push "+LV[lvOf("PUSH")]+", legs "+LV[lvOf("SQ")]+", pull "+LV[lvOf("PULL")]+", core "+LV[lvOf("CORE")]+".");
+ const FB=["SQ","PUSH","PULL","HIP","ARM","CORE","SH"],UP=["PUSH","PULL","SH","PULL","ARM","CORE","ARM"],LO=["SQ","HIP","SQ","HIP","CORE"],PU=["PUSH","SH","PUSH","ARM","CORE"],PL=["PULL","PULL","ARM","CORE"];
  let tpl;
  if(days<=3)tpl=Array.from({length:days},(_,i)=>["Full body "+"ABC"[i],FB]);
  else if(days===4)tpl=[["Upper A",UP],["Lower A",LO],["Upper B",UP],["Lower B",LO]];
  else tpl=Array.from({length:days},(_,i)=>[["Push","Pull","Legs"][i%3]+(i>2?" B":" A"),[PU,PL,LO][i%3]]);
- const rk={gym:0,db:1,bar:1,bench:1,band:2,bw:3},reps=p.goal==="muscle"?[8,12]:p.goal==="fat"?[12,15]:[10,12],bs=p.fat==="high"?2:3;
+ const rk={gym:0,db:1,bar:1,bench:1,band:2,bw:3};
+ const miss=new Set(),NM={BI:"biceps",TRI:"triceps",SH:"shoulders",PULL:"pulling",PUSH:"pushing",SQ:"squat",HIP:"hamstrings and glutes",CORE:"core"};
  const sessions=tpl.map(([name,pats],si)=>{
-  const used=new Set();
+  const used=new Set();let ar=0;
   const ex=pats.slice(0,N).map(pt=>{
+   if(pt==="ARM")pt=(si+ar++)%2?"TRI":"BI";
    let c=pool.filter(t=>t.p===pt&&t.eq.every(k=>have.has(k))&&!t.a.some(a=>p.inj.includes(a))&&!used.has(t.id));
-   if(!c.length)return null;
-   const f=c.filter(t=>t.v<=lv);
+   if(!c.length){miss.add(pt);return null}
+   const f=c.filter(t=>t.v<=lvOf(pt));
    if(f.length)c=f.sort((a,b)=>b.v-a.v||b.c-a.c||rk[a.eq[0]]-rk[b.eq[0]]||a.n.length-b.n.length);
    else c.sort((a,b)=>a.v-b.v||a.n.length-b.n.length);
    const t=c[si%Math.min(2,c.length)];
    used.add(t.id);
-   const core=pt==="CORE",arm=pt==="ARM"||pt==="SH";
+   const core=pt==="CORE",arm=["BI","TRI","SH"].includes(pt);
    const [lo,hi]=t.t?[30,45]:core?[12,15]:arm?[10,15]:reps;
    return{id:t.id,sets:core||arm?2:bs,lo,hi};
   }).filter(Boolean);
   return{name,ex};
  });
+ if(miss.size)note.push("No exercise found for "+[...miss].map(k=>NM[k]).join(", ")+" with your equipment and injury filters. Add equipment, or use Swap and the Library.");
+ if(p.eq.includes("diy")&&!p.eq.includes("db"))note.push("Home-made weights are light. When the top of the rep range feels easy, add water, load a backpack, or get resistance bands.");
  return{sessions,lv,note,reps};
 }
 
@@ -75,20 +96,21 @@ const lvl=xp=>{let l=1;while(xp>=50*l*(l+1))l++;return l};
 const R=(n,o,v)=>o.map(([k,l])=>`<label class="chip"><input type="radio" name="${n}" value="${k}" ${String(k)===String(v)?"checked":""}><span>${l}</span></label>`).join("");
 const C=(n,o,v)=>o.map(([k,l])=>`<label class="chip"><input type="checkbox" name="${n}" value="${k}" ${v.includes(k)?"checked":""}><span>${l}</span></label>`).join("");
 function setup(){
- const p=S.p||{goal:"general",pu:0,sq:0,hist:"never",peak:1,inj:[],days:3,min:45,fat:"mid",eq:[]};
- return `<div class="card"><h3>Your goal</h3><p class="mu">Pick one. You can switch later, but chasing everything at once slows progress.</p>${R("goal",[["muscle","Build muscle"],["fat","Lose fat"],["general","General fitness (pick this if unsure)"]],p.goal)}</div>
-<div class="card"><h3>Where you are now</h3><label class="f">Push-ups in a row, full form (0 if none)<input id="pu" type="number" inputmode="numeric" min="0" value="${p.pu}"></label><label class="f">Bodyweight squats in a row<input id="sq" type="number" inputmode="numeric" min="0" value="${p.sq}"></label></div>
-<div class="card"><h3>Training history</h3>${R("hist",[["never","Never trained"],["off","Trained before, off 3+ months"],["on","Training regularly now"]],p.hist)}<p class="mu">At your best, you were:</p>${R("peak",[[1,"Beginner"],[2,"Intermediate"],[3,"Advanced"]],p.peak)}</div>
+ const p=Object.assign({goal:"general",lp:0,ll:0,lu:0,lc:0,hist:"never",peak:0,inj:[],days:3,min:45,fat:"mid",int:"mid",age:"na",sleep:"mid",med:"no",eq:[]},S.p||{});
+ return `<div class="card"><h3>Your goal</h3><p class="mu">Pick one. You can switch later, but chasing everything at once slows progress. N/A means not sure or not applicable. The plan then falls back to safe middle-of-the-road defaults.</p>${R("goal",[["muscle","Build muscle"],["fat","Lose fat"],["general","General fitness (pick this if unsure)"]],p.goal)}</div>
+<div class="card"><h3>About you</h3><p class="mu">Age</p>${R("age",[["18","18–29"],["30","30–44"],["45","45–59"],["60","60+"],["na","N/A"]],p.age)}<p class="mu">Sleep per night</p>${R("sleep",[["low","Under 6 h"],["mid","6–7 h"],["high","7+ h"],["na","N/A"]],p.sleep)}<p class="mu">Has a doctor told you to limit exercise (heart, blood pressure, joints, anything else)?</p>${R("med",[["no","No"],["yes","Yes"],["na","N/A"]],p.med)}</div>
+<div class="card"><h3>Strength check</h3><p class="mu">Test yourself honestly, with good form. Pick N/A for any test you can’t do or don’t want to try.</p><p class="mu">Push-ups in a row</p>${R("lp",[[0,"N/A"],[1,"0–7"],[2,"8–19"],[3,"20+"]],p.lp)}<p class="mu">Bodyweight squats in a row</p>${R("ll",[[0,"N/A"],[1,"0–14"],[2,"15–29"],[3,"30+"]],p.ll)}<p class="mu">Pull-ups in a row</p>${R("lu",[[0,"N/A (no bar)"],[1,"0"],[2,"1–4"],[3,"5+"]],p.lu)}<p class="mu">Plank hold</p>${R("lc",[[0,"N/A"],[1,"Under 20 s"],[2,"20–45 s"],[3,"Over 45 s"]],p.lc)}</div>
+<div class="card"><h3>Training history</h3>${R("hist",[["never","Never trained"],["off","Trained before, off 3+ months"],["on","Training regularly now"],["na","N/A"]],p.hist)}<p class="mu">At your best, you were:</p>${R("peak",[[0,"N/A"],[1,"Beginner"],[2,"Intermediate"],[3,"Advanced"]],p.peak)}</div>
 <div class="card"><h3>Pain or injuries</h3>${C("inj",[["shoulder","Shoulder"],["back","Lower back"],["knee","Knee"],["wrist","Wrist"],["neck","Neck"]],p.inj)}<p class="mu">Movements that load these areas are filtered out, but the filter is a rough guide. For a real injury, see a doctor first.</p></div>
-<div class="card"><h3>Schedule</h3><p class="mu">Days per week</p>${R("days",[2,3,4,5,6].map(n=>[n,n]),p.days)}<p class="mu">Minutes per session</p>${R("min",[[30,"30"],[45,"45"],[60,"60"]],p.min)}<p class="mu">How tiring is your workday?</p>${R("fat",[["low","Light"],["mid","Moderate"],["high","Very tiring"]],p.fat)}</div>
-<div class="card"><h3>Equipment</h3>${C("eq",[["db","Dumbbells"],["band","Resistance bands"],["bar","Pull-up bar"],["bench","Bench or sturdy box"],["gym","Gym membership (full gym)"]],p.eq)}<p class="mu">Bodyweight, a chair and a sturdy table are assumed.</p></div>
+<div class="card"><h3>Schedule and effort</h3><p class="mu">Days per week</p>${R("days",[2,3,4,5,6].map(n=>[n,n]),p.days)}<p class="mu">Minutes per session</p>${R("min",[[30,"30"],[45,"45"],[60,"60"]],p.min)}<p class="mu">How tiring is your workday?</p>${R("fat",[["low","Light"],["mid","Moderate"],["high","Very tiring"],["na","N/A"]],p.fat)}<p class="mu">How hard do you want to start?</p>${R("int",[["easy","Easy"],["mid","Moderate"],["hard","Hard"],["na","N/A"]],p.int)}</div>
+<div class="card"><h3>Equipment</h3>${C("eq",[["db","Dumbbells"],["diy","Water bottles or loaded backpack (home-made weights)"],["band","Resistance bands"],["bar","Pull-up bar"],["bench","Bench or sturdy box"],["gym","Gym membership (full gym)"]],p.eq)}<p class="mu">Bodyweight, a chair and a sturdy table are assumed.</p></div>
 <button class="btn" onclick="build()">Build my plan</button>`;
 }
 const val=n=>(document.querySelector(`input[name=${n}]:checked`)||{}).value;
 const vals=n=>[...document.querySelectorAll(`input[name=${n}]:checked`)].map(i=>i.value);
 function build(){
- const pu=+$("pu").value||0,sq=+$("sq").value||0;
- const p={goal:val("goal"),pu,sq,cur:(pu<8||sq<15)?1:(pu>=20&&sq>=30)?3:2,hist:val("hist"),peak:+val("peak"),inj:vals("inj"),days:+val("days"),min:+val("min"),fat:val("fat"),eq:vals("eq")};
+ const n=k=>+val(k)||0;
+ const p={goal:val("goal"),lp:n("lp"),ll:n("ll"),lu:n("lu"),lc:n("lc"),hist:val("hist"),peak:n("peak"),inj:vals("inj"),days:+val("days"),min:+val("min"),fat:val("fat"),int:val("int"),age:val("age"),sleep:val("sleep"),med:val("med"),eq:vals("eq")};
  S.p=p;S.plan=gen(p);save();view="plan";render();scrollTo(0,0);
 }
 
@@ -97,7 +119,7 @@ function planV(){
  const xp=xpTotal(),l=lvl(xp),a=50*(l-1)*l,b=50*l*(l+1),rank=CFG.RANKS.filter(r=>l>=r[0]).pop()[1];
  const wk=S.logs.filter(t=>Date.now()-t.t<6048e5).length,g={muscle:"Build muscle",fat:"Lose fat",general:"General fitness"}[S.p.goal];
  return `<div class="card"><h3>Level ${l}, ${rank}</h3><div class="bar"><i style="width:${Math.round((xp-a)/(b-a)*100)}%"></i></div><div class="mu">${xp-a} of ${b-a} XP to the next level</div><p class="mu">${LV[pl.lv]} plan, ${g}. Last 7 days: ${wk} of ${pl.sessions.length} sessions.</p>${pl.note.map(n=>`<p class="mu">${n}</p>`).join("")}</div>`+
- pl.sessions.map((s,i)=>`<div class="card"><h3>${s.name}</h3>${s.ex.map((e,k)=>{const x=X[e.id]||{name:e.id},t=T[e.id]||{};return `<div class="row"><span class="lnk" onclick="show('${e.id}')">${x.name}</span><span class="mu">${e.sets} × ${e.lo}–${e.hi}${t.t?" s":""}</span><button class="btn sm ghost" onclick="swap(${i},${k})">Swap</button></div>`}).join("")}<button class="btn" onclick="start(${i})">Start session</button></div>`).join("")+
+ pl.sessions.map((s,i)=>`<div class="card"><h3>${s.name}</h3>${s.ex.map((e,k)=>{const x=X[e.id]||{name:e.id},t=T[e.id]||{};return `<div class="ex"><div class="row"><span class="lnk" onclick="show('${e.id}')">${x.name}</span><span class="mu">${e.sets} × ${e.lo}–${e.hi}${t.t?" s":""}</span><button class="btn sm ghost" onclick="swap(${i},${k})">Swap</button></div><div class="imgs sm" onclick="show('${e.id}')">${(x.images||[]).map(m=>`<img loading="lazy" alt="${x.name}" src="${CFG.IMG+m}">`).join("")}</div></div>`}).join("")}<button class="btn" onclick="start(${i})">Start session</button></div>`).join("")+
  `<p class="mu">Leave a rest day between hard sessions. This is general guidance, not medical advice. Stop if you feel sharp pain.</p>`;
 }
 
@@ -111,12 +133,18 @@ function workV(){
   if(l){const top=l.sets.every(q=>q.r>=e.hi);
    tip="Last time: "+l.sets.map(q=>(q.w?q.w+" kg × ":"")+q.r).join(", ")+". "+(top?(l.sets.some(q=>q.w>0)?"You hit the top of the range. Add 1–2 kg.":t.t?"Top of the range. Add 5–10 s or use a harder variation.":"Top of the range. Use a harder variation or slower reps."):"Beat last time with more reps before adding load.")}
   return `<div class="card"><h3 class="lnk" onclick="show('${e.id}')">${x.name}</h3><div class="mu">${e.sets} sets of ${e.lo}–${e.hi}${t.t?" seconds":" reps"}. Tap the name for pictures and steps.</div><div class="mu tip">${tip}</div>`+
-  D.sets[ei].map((q,k)=>`<div class="set"><span>${k+1}</span><input type="number" inputmode="decimal" placeholder="kg" value="${q.w}" oninput="D.sets[${ei}][${k}].w=this.value"><input type="number" inputmode="numeric" placeholder="${t.t?"sec":"reps"}" value="${q.r}" oninput="D.sets[${ei}][${k}].r=this.value"><button class="btn sm ghost" onclick="rest()">Rest</button></div>`).join("")+`</div>`}).join("")+
+  D.sets[ei].map((q,k)=>`<div class="set"><span>${k+1}</span><input type="number" inputmode="decimal" placeholder="kg" value="${q.w}" oninput="D.sets[${ei}][${k}].w=this.value"><input type="number" inputmode="numeric" placeholder="${t.t?"sec":"reps"}" value="${q.r}" oninput="D.sets[${ei}][${k}].r=this.value"><button class="btn sm ghost" onclick="rest()">Rest</button></div>`).join("")+`</div>`}).join("")+coolV(s)+
   `<button class="btn" onclick="finish()">Finish workout</button><button class="btn ghost" onclick="view='plan';render()">Cancel</button>`;
 }
-function rest(){
- clearInterval(rt);let t=75;const b=$("rb");b.hidden=false;
- const u=()=>{if(t<=0){clearInterval(rt);b.textContent="Rest over. Start your next set.";try{navigator.vibrate(300)}catch(e){}setTimeout(()=>{b.hidden=true},4000);return}b.textContent="Rest "+t+" s (tap to skip)";t--};
+function coolV(s){
+ const ms=[...new Set(s.ex.map(e=>((X[e.id]||{}).primaryMuscles||[])[0]).filter(Boolean))].slice(0,4);
+ const pool=Object.values(X).filter(x=>x.category==="stretching"&&(!x.equipment||x.equipment==="body only")&&!(S.p&&S.p.inj.includes("neck")&&(x.primaryMuscles||[])[0]==="neck"));
+ const pick=ms.map(m=>pool.filter(x=>(x.primaryMuscles||[])[0]===m).sort((p,q)=>p.name.length-q.name.length)[0]).filter(Boolean);
+ return `<div class="card"><h3>Cool-down</h3><p class="mu">Start with 2 minutes of easy walking or slow breathing: in for 4 seconds, out for 6. Then hold each stretch about 30 seconds, on both sides if it is one-sided. Stay gentle and stop at any sharp pain.</p>`+(pick.length?pick.map(x=>`<div class="row"><span class="lnk" onclick="show('${x.id}')">${x.name}</span><button class="btn sm ghost" onclick="rest(30,'Hold','Done. Switch sides or move on.')">Hold 30 s</button></div>`).join(""):`<p class="mu">No matching stretches found for this session.</p>`)+`</div>`;
+}
+function rest(t=75,w="Rest",m="Rest over. Start your next set."){
+ clearInterval(rt);const b=$("rb");b.hidden=false;
+ const u=()=>{if(t<=0){clearInterval(rt);b.textContent=m;try{navigator.vibrate(300)}catch(e){}setTimeout(()=>{b.hidden=true},4000);return}b.textContent=w+" "+t+" s (tap to skip)";t--};
  u();rt=setInterval(u,1000);
 }
 function finish(){
@@ -140,13 +168,14 @@ function finish(){
 function libV(){
  const A=Object.values(X),mus=[...new Set(A.flatMap(x=>x.primaryMuscles||[]))].sort(),eqs=[...new Set(A.map(x=>x.equipment||"none"))].sort();
  const o=(a,v)=>`<option value="">All</option>`+a.map(k=>`<option ${k===v?"selected":""}>${k}</option>`).join("");
- return `<h2>${L.sw?"Swap exercise":"Exercise library"}</h2><div class="card"><input id="q" aria-label="Search" placeholder="Search ${A.length} exercises" value="${L.q.replace(/"/g,"&quot;")}" oninput="L.q=this.value;list()"><select aria-label="Muscle" onchange="L.mu=this.value;list()">${o(mus,L.mu)}</select><select aria-label="Equipment" onchange="L.eq=this.value;list()">${o(eqs,L.eq)}</select>${L.sw?`<p class="mu">Showing exercises of the same movement type that fit your equipment.</p>`:""}</div><div id="res"></div>`+(L.sw?`<button class="btn ghost" onclick="L.sw=null;view='plan';render()">Cancel</button>`:"");
+ return `<h2>${L.sw?"Swap exercise":"Exercise library"}</h2><div class="card"><input id="q" class="big" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search exercises" placeholder="Type an exercise name, e.g. curl" value="${L.q.replace(/"/g,"&quot;")}" oninput="L.q=this.value;showList()"><select aria-label="Muscle" onchange="L.mu=this.value;showList()">${o(mus,L.mu)}</select><select aria-label="Equipment" onchange="L.eq=this.value;showList()">${o(eqs,L.eq)}</select>${L.sw?`<p class="mu">Showing exercises of the same movement type that fit your equipment.</p>`:""}</div><div id="res"></div>`+(L.sw?`<button class="btn ghost" onclick="L.sw=null;view='plan';render()">Cancel</button>`:"");
 }
-function list(){
- const q=L.q.toLowerCase();
- let a=Object.values(X).filter(x=>(!q||x.name.toLowerCase().includes(q))&&(!L.mu||(x.primaryMuscles||[]).includes(L.mu))&&(!L.eq||(x.equipment||"none")===L.eq));
+function showList(){
+ const q=L.q.trim().toLowerCase(),w=q.split(/[\s-]+/).filter(Boolean);
+ let a=Object.values(X).filter(x=>w.every(k=>x.name.toLowerCase().includes(k))&&(!L.mu||(x.primaryMuscles||[]).includes(L.mu))&&(!L.eq||(x.equipment||"none")===L.eq));
  if(L.sw){const t0=T[L.sw.id],h=haveOf(S.p);a=a.filter(x=>{const t=T[x.id];return t.p&&t.p===t0.p&&t.eq.every(k=>h.has(k))&&x.id!==L.sw.id})}
- $("res").innerHTML=(a.length?a.slice(0,60).map(x=>`<div class="card row2"><div onclick="show('${x.id}')"><b>${x.name}</b><div class="mu">${(x.primaryMuscles||[]).join(", ")}, ${x.equipment||"no equipment"}, ${x.level}</div></div>${L.sw?`<button class="btn sm" onclick="use('${x.id}')">Use</button>`:""}</div>`).join(""):`<p class="mu">No matches.</p>`)+(a.length>60?`<p class="mu">Showing 60 of ${a.length}. Narrow your search.</p>`:"");
+ if(q)a.sort((x,y)=>(y.name.toLowerCase().startsWith(q)-x.name.toLowerCase().startsWith(q))||x.name.length-y.name.length);
+ $("res").innerHTML=`<p class="mu">${a.length} found</p>`+(a.length?a.slice(0,60).map(x=>`<div class="card row2"><div onclick="show('${x.id}')"><b>${x.name}</b><div class="mu">${(x.primaryMuscles||[]).join(", ")}, ${x.equipment||"no equipment"}, ${x.level}</div></div>${L.sw?`<button class="btn sm" onclick="use('${x.id}')">Use</button>`:""}</div>`).join(""):`<p class="mu">No matches.</p>`)+(a.length>60?`<p class="mu">Showing 60 of ${a.length}. Narrow your search.</p>`:"");
 }
 function show(id){E=id;back=view;view="ex";render();scrollTo(0,0)}
 function exV(){
@@ -178,7 +207,7 @@ function go(k){if(k==="lib")L={q:"",mu:"",eq:"",sw:null};view=k;render()}
 function render(){
  const nav=[["plan","Plan"],["lib","Library"],["hist","History"],["data","Backup"]];
  $("app").innerHTML=`<div class="wrap"><h1>Train Coach</h1>`+(view==="work"||view==="ex"?"":`<nav>${nav.map(([k,l])=>`<button class="tab ${view===k?"on":""}" onclick="go('${k}')">${l}</button>`).join("")}</nav>`)+({plan:planV,setup,work:workV,hist:histV,data:dataV,lib:libV,ex:exV}[view])()+`</div>`;
- if(view==="lib")list();
+ if(view==="lib")showList();
 }
 load().then(a=>{
  if(!a){$("app").innerHTML=`<div class="wrap"><h1>Train Coach</h1><div class="card">Could not load the exercise list. Check your connection and reload the page.</div></div>`;return}
